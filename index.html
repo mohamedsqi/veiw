@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Protein-Ligand Viewer</title>
+  <script src="https://3Dmol.org/build/3Dmol-min.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f4f6f9;
+      color: #222;
+    }
+
+    .container {
+      max-width: 1450px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    h1 {
+      margin: 0 0 8px 0;
+      font-size: 28px;
+    }
+
+    .subtitle {
+      margin-bottom: 14px;
+      color: #555;
+      line-height: 1.5;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .panel {
+      background: white;
+      border-radius: 14px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.08);
+      overflow: hidden;
+      position: relative;   /* 🔥 FIX */
+      z-index: 5;           /* 🔥 FIX */
+    }
+
+    .sidepanel {
+      padding: 18px;
+      position: relative;   /* 🔥 FIX */
+      z-index: 10;          /* 🔥 FIX */
+    }
+
+    #viewer {
+      width: 100%;
+      height: 780px;
+      position: relative;   /* 🔥 FIX */
+      z-index: 1;           /* 🔥 FIX */
+    }
+
+    .section-title {
+      font-size: 16px;
+      font-weight: bold;
+      margin-bottom: 12px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+      font-size: 14px;
+    }
+
+    .swatch {
+      width: 18px;
+      height: 18px;
+      border-radius: 4px;
+      border: 1px solid #aaa;
+      flex: 0 0 auto;
+    }
+
+    .swatch-beige { background: #e6d3a3; }
+    .swatch-magenta { background: #b000b5; }
+    .swatch-cyan { background: #00d7df; }
+    .swatch-hbond {
+      background: repeating-linear-gradient(
+        90deg,
+        #000 0px,
+        #000 6px,
+        #fff 6px,
+        #fff 10px
+      );
+    }
+
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+      font-size: 15px;
+    }
+
+    .checkbox-row input {
+      transform: scale(1.15);
+      cursor: pointer;
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    button {
+      padding: 10px 14px;
+      border: none;
+      border-radius: 8px;
+      background: #2563eb;
+      color: white;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    button:hover {
+      background: #1d4ed8;
+    }
+
+    .status {
+      padding: 12px 16px;
+      font-size: 14px;
+      color: #555;
+      border-top: 1px solid #e5e7eb;
+      background: #fafafa;
+    }
+
+    .tip {
+      margin-top: 18px;
+      font-size: 13px;
+      color: #666;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 1050px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+      #viewer {
+        height: 620px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Protein-Ligand Viewer</h1>
+
+    <div class="layout">
+      <div class="panel sidepanel">
+
+        <label class="checkbox-row">
+          <input type="checkbox" id="toggleProtein" checked onchange="updateScene()">
+          Protéine
+        </label>
+
+        <label class="checkbox-row">
+          <input type="checkbox" id="togglePocket" checked onchange="updateScene()">
+          Poche
+        </label>
+
+        <label class="checkbox-row">
+          <input type="checkbox" id="toggleLigand" checked onchange="updateScene()">
+          Ligand
+        </label>
+
+        <label class="checkbox-row">
+          <input type="checkbox" id="toggleHBonds" checked onchange="updateScene()">
+          Liaisons H
+        </label>
+
+      </div>
+
+      <div class="panel">
+        <div id="viewer"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+let viewer, model, hbonds=[];
+
+async function loadScene(){
+
+const res = await fetch("./merged_1a4l_complex.pdb");
+const pdb = await res.text();
+
+viewer = $3Dmol.createViewer("viewer",{backgroundColor:"white"});
+model = viewer.addModel(pdb,"pdb");
+
+hbonds = computeHBonds();
+
+updateScene();
+
+viewer.zoomTo({hetflag:true});
+viewer.render();
+}
+
+function updateScene(){
+
+viewer.setStyle({}, {});
+viewer.removeAllShapes();
+
+if(toggleProtein.checked){
+viewer.setStyle({chain:"A"},{cartoon:{color:"#e6d3a3"}});
+}
+
+if(togglePocket.checked){
+viewer.setStyle(
+{chain:"A", within:{distance:8, sel:{hetflag:true}}},
+{stick:{colorscheme:"magentaCarbon", radius:0.25}}
+);
+}
+
+if(toggleLigand.checked){
+viewer.setStyle({hetflag:true},{stick:{colorscheme:"cyanCarbon"}});
+}
+
+if(toggleHBonds.checked){
+hbonds.forEach(h=>{
+viewer.addLine({
+start:h.start,
+end:h.end,
+dashed:true,
+color:"black",
+linewidth:4
+});
+});
+}
+
+viewer.render();
+}
+
+function computeHBonds(){
+
+const atoms = model.selectedAtoms({});
+
+let lig = atoms.filter(a=>a.hetflag);
+let prot = atoms.filter(a=>!a.hetflag && a.chain==="A");
+
+let hb=[];
+
+for(let la of lig){
+for(let pa of prot){
+
+let dx=la.x-pa.x;
+let dy=la.y-pa.y;
+let dz=la.z-pa.z;
+
+let d=Math.sqrt(dx*dx+dy*dy+dz*dz);
+
+if(d>2 && d<3.5){
+hb.push({start:la,end:pa});
+}
+}
+}
+
+return hb;
+}
+
+loadScene();
+</script>
+
+</body>
+</html>
