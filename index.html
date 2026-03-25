@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Protein-Ligand Viewer</title>
+  <script src="https://3Dmol.org/build/3Dmol-min.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f4f6f9;
+      color: #222;
+    }
+
+    .container {
+      max-width: 1450px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    h1 {
+      margin: 0 0 8px 0;
+      font-size: 28px;
+    }
+
+    .subtitle {
+      margin-bottom: 14px;
+      color: #555;
+      line-height: 1.5;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .panel {
+      background: white;
+      border-radius: 14px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.08);
+      overflow: hidden;
+    }
+
+    .sidepanel {
+      padding: 18px;
+    }
+
+    .section-title {
+      font-size: 16px;
+      font-weight: bold;
+      margin-bottom: 12px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+      font-size: 14px;
+    }
+
+    .swatch {
+      width: 18px;
+      height: 18px;
+      border-radius: 4px;
+      border: 1px solid #aaa;
+      flex: 0 0 auto;
+    }
+
+    .swatch-beige { background: #e6d3a3; }
+    .swatch-magenta { background: #b000b5; }
+    .swatch-cyan { background: #00d7df; }
+    .swatch-hbond {
+      background: repeating-linear-gradient(
+        90deg,
+        #000 0px,
+        #000 6px,
+        #fff 6px,
+        #fff 10px
+      );
+    }
+
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+      font-size: 15px;
+    }
+
+    .checkbox-row input {
+      transform: scale(1.15);
+      cursor: pointer;
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    button {
+      padding: 10px 14px;
+      border: none;
+      border-radius: 8px;
+      background: #2563eb;
+      color: white;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    button:hover {
+      background: #1d4ed8;
+    }
+
+    #viewer {
+      width: 100%;
+      height: 780px;
+    }
+
+    .status {
+      padding: 12px 16px;
+      font-size: 14px;
+      color: #555;
+      border-top: 1px solid #e5e7eb;
+      background: #fafafa;
+    }
+
+    .tip {
+      margin-top: 18px;
+      font-size: 13px;
+      color: #666;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 1050px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+      #viewer {
+        height: 620px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Protein-Ligand Viewer</h1>
+    <div class="subtitle">
+      Chaîne A uniquement, protéine en beige, poche en magenta, ligand en cyan,
+      et liaisons H approximées en pointillé noir.
+    </div>
+
+    <div class="layout">
+      <div class="panel sidepanel">
+        <div class="section-title">Légende interactive</div>
+
+        <label class="checkbox-row">
+          <input type="checkbox" id="toggleProtein" checked onchange="updateScene()">
+          <span class="swatch swatch-beige"></span>
+          <span>Hélices / protéine (chaîne A)</span>
+        </label>
+
+        <label class="checkbox-row">
+          <input type="checkbox" id="togglePocket" checked onchange="updateScene()">
+          <span class="swatch swatch-magenta"></span>
+          <span>Poche catalytique</span>
+        </label>
+
+        <label class="checkbox-row">
+          <input type="checkbox" id="toggleLigand" checked onchange="updateScene()">
+          <span class="swatch swatch-cyan"></span>
+          <span>Ligand</span>
+        </label>
+
+        <label class="checkbox-row">
+          <input type="checkbox" id="toggleHBonds" checked onchange="updateScene()">
+          <span class="swatch swatch-hbond"></span>
+          <span>Liaisons H</span>
+        </label>
+
+        <div class="button-row">
+          <button onclick="resetView()">Reset View</button>
+          <button onclick="zoomLigand()">Zoom ligand</button>
+          <button onclick="presetPocket()">Preset pocket</button>
+          <button onclick="presetCartoon()">Preset cartoon</button>
+        </div>
+
+        <div class="tip">
+          Les liaisons H sont estimées à partir des atomes N / O / S du ligand et de la protéine,
+          avec un cutoff distance simple pour une visualisation propre.
+        </div>
+      </div>
+
+      <div class="panel">
+        <div id="viewer"></div>
+        <div id="status" class="status">Chargement...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let viewer = null;
+    let model = null;
+    let hbonds = [];
+
+    async function loadScene() {
+      const status = document.getElementById("status");
+      status.innerText = "Chargement du fichier fusionné...";
+
+      try {
+        const res = await fetch("./merged_1a4l_complex.pdb");
+        if (!res.ok) throw new Error("Impossible de charger merged_1a4l_complex.pdb");
+        const pdb = await res.text();
+
+        viewer = $3Dmol.createViewer("viewer", { backgroundColor: "white" });
+        model = viewer.addModel(pdb, "pdb");
+
+        hbonds = computeHBonds();
+
+        updateScene();
+        viewer.zoomTo({hetflag:true});
+        viewer.render();
+
+        status.innerText = "Structure chargée avec succès";
+      } catch (err) {
+        status.innerText = "Erreur : " + err.message;
+        console.error(err);
+      }
+    }
+
+    function getCheckboxValue(id) {
+      return document.getElementById(id).checked;
+    }
+
+    function updateScene() {
+      const showProtein = getCheckboxValue("toggleProtein");
+      const showPocket = getCheckboxValue("togglePocket");
+      const showLigand = getCheckboxValue("toggleLigand");
+      const showHBonds = getCheckboxValue("toggleHBonds");
+
+      viewer.setStyle({}, {});
+      viewer.removeAllShapes();
+
+      // Protéine, chaîne A uniquement
+      if (showProtein) {
+        viewer.setStyle(
+          {chain: "A", protein: true},
+          {cartoon: {color: "#e6d3a3"}}
+        );
+      }
+
+      // Poche autour du ligand
+      if (showPocket) {
+        viewer.setStyle(
+          {chain: "A", within: {distance: 8, sel: {hetflag: true}}},
+          {stick: {colorscheme: "magentaCarbon", radius: 0.22}}
+        );
+      }
+
+      // Ligand
+      if (showLigand) {
+        viewer.setStyle(
+          {hetflag: true},
+          {stick: {colorscheme: "cyanCarbon", radius: 0.24}}
+        );
+      }
+
+      // Liaisons H
+      if (showHBonds) {
+        addHBondLines();
+      }
+
+      viewer.render();
+      document.getElementById("status").innerText = "Affichage mis à jour";
+    }
+
+    function resetView() {
+      viewer.zoomTo();
+      viewer.render();
+      document.getElementById("status").innerText = "Vue réinitialisée";
+    }
+
+    function zoomLigand() {
+      viewer.zoomTo({hetflag: true});
+      viewer.render();
+      document.getElementById("status").innerText = "Zoom sur le ligand";
+    }
+
+    function presetPocket() {
+      document.getElementById("toggleProtein").checked = true;
+      document.getElementById("togglePocket").checked = true;
+      document.getElementById("toggleLigand").checked = true;
+      document.getElementById("toggleHBonds").checked = true;
+      updateScene();
+      viewer.zoomTo({hetflag: true});
+      viewer.render();
+      document.getElementById("status").innerText = "Preset pocket";
+    }
+
+    function presetCartoon() {
+      document.getElementById("toggleProtein").checked = true;
+      document.getElementById("togglePocket").checked = false;
+      document.getElementById("toggleLigand").checked = true;
+      document.getElementById("toggleHBonds").checked = false;
+      updateScene();
+      viewer.zoomTo();
+      viewer.render();
+      document.getElementById("status").innerText = "Preset cartoon";
+    }
+
+    function computeHBonds() {
+      const allAtoms = model.selectedAtoms({});
+
+      const ligandAtoms = allAtoms.filter(a =>
+        a.hetflag && ["N", "O", "S"].includes((a.elem || "").toUpperCase())
+      );
+
+      const proteinAtoms = allAtoms.filter(a =>
+        a.chain === "A" &&
+        !a.hetflag &&
+        ["N", "O", "S"].includes((a.elem || "").toUpperCase())
+      );
+
+      const hb = [];
+      const minDist = 2.2;
+      const maxDist = 3.5;
+
+      for (const la of ligandAtoms) {
+        for (const pa of proteinAtoms) {
+          const dx = la.x - pa.x;
+          const dy = la.y - pa.y;
+          const dz = la.z - pa.z;
+          const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+
+          if (dist >= minDist && dist <= maxDist) {
+            hb.push({
+              start: {x: la.x, y: la.y, z: la.z},
+              end: {x: pa.x, y: pa.y, z: pa.z},
+              dist: dist
+            });
+          }
+        }
+      }
+
+      // Retirer les doublons grossiers
+      const filtered = [];
+      for (const h of hb) {
+        let keep = true;
+        for (const f of filtered) {
+          const d1 = Math.sqrt(
+            (h.start.x - f.start.x)**2 +
+            (h.start.y - f.start.y)**2 +
+            (h.start.z - f.start.z)**2 +
+            (h.end.x - f.end.x)**2 +
+            (h.end.y - f.end.y)**2 +
+            (h.end.z - f.end.z)**2
+          );
+          if (d1 < 0.2) {
+            keep = false;
+            break;
+          }
+        }
+        if (keep) filtered.push(h);
+      }
+
+      return filtered;
+    }
+
+    function addHBondLines() {
+      for (const h of hbonds) {
+        viewer.addLine({
+          start: h.start,
+          end: h.end,
+          dashed: true,
+          color: "black",
+          linewidth: 2
+        });
+      }
+    }
+
+    loadScene();
+  </script>
+</body>
+</html>
