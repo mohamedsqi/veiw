@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Protein-Ligand Superposition Viewer</title>
+  <script src="https://3Dmol.org/build/3Dmol-min.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f4f6f9;
+      color: #222;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    h1 {
+      margin: 0 0 8px 0;
+      font-size: 28px;
+    }
+
+    .subtitle {
+      margin-bottom: 16px;
+      color: #555;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    button {
+      padding: 10px 14px;
+      border: none;
+      border-radius: 8px;
+      background: #2563eb;
+      color: white;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    button:hover {
+      background: #1d4ed8;
+    }
+
+    .panel {
+      background: white;
+      border-radius: 14px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.08);
+      overflow: hidden;
+    }
+
+    #viewer {
+      width: 100%;
+      height: 760px;
+    }
+
+    .status {
+      padding: 12px 16px;
+      font-size: 14px;
+      color: #555;
+      border-top: 1px solid #e5e7eb;
+      background: #fafafa;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Protein-Ligand Superposition</h1>
+    <div class="subtitle">
+      Protéine chargée depuis <strong>1a4l_protein.pdb</strong> et ligand chargé depuis <strong>complex1.pdb</strong>.
+    </div>
+
+    <div class="toolbar">
+      <button onclick="styleDefault()">Default</button>
+      <button onclick="stylePocket()">Pocket</button>
+      <button onclick="toggleLigand()">Ligand ON/OFF</button>
+      <button onclick="toggleProtein()">Protein ON/OFF</button>
+      <button onclick="resetView()">Reset View</button>
+    </div>
+
+    <div class="panel">
+      <div id="viewer"></div>
+      <div id="status" class="status">Chargement...</div>
+    </div>
+  </div>
+
+  <script>
+    let viewer;
+    let ligandVisible = true;
+    let proteinVisible = true;
+
+    async function loadScene() {
+      const status = document.getElementById("status");
+      status.innerText = "Chargement des fichiers...";
+
+      try {
+        const proteinRes = await fetch("./1a4l_protein.pdb");
+        if (!proteinRes.ok) throw new Error("Impossible de charger 1a4l_protein.pdb");
+        const proteinPDB = await proteinRes.text();
+
+        const ligandRes = await fetch("./complex1.pdb");
+        if (!ligandRes.ok) throw new Error("Impossible de charger complex1.pdb");
+        const ligandPDB = await ligandRes.text();
+
+        viewer = $3Dmol.createViewer("viewer", { backgroundColor: "white" });
+
+        // Modèle 0 = protéine seule
+        viewer.addModel(proteinPDB, "pdb");
+
+        // Modèle 1 = complexe, mais on n'affichera que le ligand
+        viewer.addModel(ligandPDB, "pdb");
+
+        styleDefault();
+        viewer.zoomTo();
+        viewer.render();
+
+        status.innerText = "Structure chargée avec succès";
+      } catch (err) {
+        status.innerText = "Erreur : " + err.message;
+        console.error(err);
+      }
+    }
+
+    function clearAllStyles() {
+      if (!viewer) return;
+      viewer.setStyle({model: 0}, {});
+      viewer.setStyle({model: 1}, {});
+    }
+
+    function styleDefault() {
+      clearAllStyles();
+
+      // Protéine venant de 1a4l_protein.pdb
+      if (proteinVisible) {
+        viewer.setStyle(
+          {model: 0, protein: true},
+          {cartoon: {color: "#bcd7f5"}}
+        );
+      }
+
+      // Ligand venant de complex1.pdb uniquement
+      if (ligandVisible) {
+        viewer.setStyle(
+          {model: 1, hetflag: true},
+          {stick: {colorscheme: "cyanCarbon", radius: 0.22}}
+        );
+      }
+
+      viewer.zoomTo();
+      viewer.render();
+      document.getElementById("status").innerText = "Style default";
+    }
+
+    function stylePocket() {
+      clearAllStyles();
+
+      if (proteinVisible) {
+        viewer.setStyle(
+          {model: 0, protein: true},
+          {cartoon: {color: "#bcd7f5", opacity: 0.22}}
+        );
+
+        // Résidus de la protéine proches du ligand
+        viewer.setStyle(
+          {model: 0, within: {distance: 8, sel: {model: 1, hetflag: true}}},
+          {stick: {colorscheme: "magentaCarbon", radius: 0.22}}
+        );
+      }
+
+      if (ligandVisible) {
+        viewer.setStyle(
+          {model: 1, hetflag: true},
+          {stick: {colorscheme: "cyanCarbon", radius: 0.24}}
+        );
+      }
+
+      viewer.zoomTo({model: 1, hetflag: true});
+      viewer.render();
+      document.getElementById("status").innerText = "Style pocket";
+    }
+
+    function toggleLigand() {
+      ligandVisible = !ligandVisible;
+      styleDefault();
+    }
+
+    function toggleProtein() {
+      proteinVisible = !proteinVisible;
+      styleDefault();
+    }
+
+    function resetView() {
+      viewer.zoomTo();
+      viewer.render();
+      document.getElementById("status").innerText = "Vue réinitialisée";
+    }
+
+    loadScene();
+  </script>
+</body>
+</html>
